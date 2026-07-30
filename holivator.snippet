@@ -1,0 +1,13 @@
+#!name=Holivator 自动签到
+#!desc=每天 08:30 自动签到；登录状态仅保存在 Quantumult X 本机
+#!author=ismepy
+#!homepage=https://github.com/ismepy/quanx-scripts
+
+[rewrite_local]
+^https:\/\/holivator\.de\/api\/v1\/user\/checkin(?:\/status)?(?:\?.*)?$ url script-request-header https://raw.githubusercontent.com/ismepy/quanx-scripts/main/scripts/holivator_capture.js
+
+[task_local]
+30 8 * * * https://raw.githubusercontent.com/ismepy/quanx-scripts/main/scripts/holivator_checkin.js, tag=Holivator 每日签到, enabled=true
+
+[mitm]
+hostname = %APPEND% holivator.de
