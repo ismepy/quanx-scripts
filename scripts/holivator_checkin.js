@@ -10,12 +10,21 @@ const CHECKIN_URL = API_BASE + "/user/checkin";
 
 let finished = false;
 
+function log(message) {
+  if (typeof console !== "undefined" && console.log) {
+    console.log("[Holivator Checkin] " + message);
+  }
+}
+
 function finish(subtitle, message) {
   if (finished) return;
   finished = true;
+  log("任务结束：" + subtitle + (message ? "；" + message : ""));
   $notify("Holivator 自动签到", subtitle, message || "");
   $done();
 }
+
+log("任务开始");
 
 const variables =
   typeof $environment !== "undefined" && $environment.variables
@@ -83,6 +92,15 @@ try {
   auth = {};
 }
 
+log(
+  "读取登录状态：Cookie=" +
+    Boolean(auth.cookie) +
+    "，Authorization=" +
+    Boolean(auth.authorization) +
+    "，CSRF=" +
+    Boolean(auth.csrf)
+);
+
 if (!auth.authorization && !auth.cookie) {
   finish(
     "尚未获取登录状态",
@@ -107,6 +125,7 @@ if (!auth.authorization && !auth.cookie) {
     "auto-cookie": false
   };
 
+  log("正在查询今日签到状态");
   $task
     .fetch({
       url: STATUS_URL,
@@ -116,6 +135,7 @@ if (!auth.authorization && !auth.cookie) {
     })
     .then((statusResponse) => {
       const statusCode = Number(statusResponse.statusCode);
+      log("状态接口 HTTP " + statusCode);
 
       if (statusCode === 401) {
         finish(
@@ -140,6 +160,7 @@ if (!auth.authorization && !auth.cookie) {
         return null;
       }
 
+      log("今日尚未签到，正在提交签到请求");
       return $task.fetch({
         url: CHECKIN_URL,
         method: "POST",
@@ -151,6 +172,7 @@ if (!auth.authorization && !auth.cookie) {
       if (!response || finished) return;
 
       const statusCode = Number(response.statusCode);
+      log("签到接口 HTTP " + statusCode);
 
       if (statusCode === 401) {
         finish(

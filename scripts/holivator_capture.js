@@ -5,6 +5,12 @@
 
 const STORAGE_KEY = "holivator_auth_v1";
 
+function log(message) {
+  if (typeof console !== "undefined" && console.log) {
+    console.log("[Holivator Capture] " + message);
+  }
+}
+
 function getHeader(headers, name) {
   const wanted = name.toLowerCase();
   const key = Object.keys(headers || {}).find(
@@ -28,6 +34,8 @@ function getCookie(cookie, name) {
   }
 }
 
+log("重写规则已命中");
+
 try {
   const headers = $request.headers || {};
   const oldRaw = $prefs.valueForKey(STORAGE_KEY);
@@ -40,6 +48,15 @@ try {
     getCookie(cookie, "csrf_token") ||
     oldData.csrf ||
     "";
+
+  log(
+    "检测登录状态：Cookie=" +
+      Boolean(cookie) +
+      "，Authorization=" +
+      Boolean(authorization) +
+      "，CSRF=" +
+      Boolean(csrf)
+  );
 
   const nextData = {
     authorization,
@@ -54,7 +71,11 @@ try {
       cookie !== (oldData.cookie || "") ||
       csrf !== (oldData.csrf || "");
 
-    $prefs.setValueForKey(JSON.stringify(nextData), STORAGE_KEY);
+    const saved = $prefs.setValueForKey(
+      JSON.stringify(nextData),
+      STORAGE_KEY
+    );
+    log("本机保存结果：" + Boolean(saved) + "，状态变化：" + changed);
 
     if (!oldRaw || changed) {
       $notify(
@@ -63,8 +84,11 @@ try {
         "未上传账号、Cookie 或 Token"
       );
     }
+  } else {
+    log("请求头中没有发现 Cookie 或 Authorization");
   }
 } catch (error) {
+  log("保存登录状态失败：" + String(error));
   $notify("Holivator 自动签到", "保存登录状态失败", String(error));
 }
 
