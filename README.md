@@ -8,17 +8,16 @@
 https://raw.githubusercontent.com/ismepy/quanx-scripts/main/gallery.json
 ```
 
-仅限 iPhone 点击：
+Quantumult X 直接 Scheme（复制到 iPhone 浏览器地址栏打开）：
 
-[添加到 Quantumult X Task Gallery](https://quantumult.app/x/open-app/ui?module=gallery&type=task&action=add&content=%5B%22https%3A%2F%2Fraw.githubusercontent.com%2Fismepy%2Fquanx-scripts%2Fmain%2Fgallery.json%22%5D)
-
-如果链接只打开网页而没有唤起 Quantumult X，表示当前设备的 Universal
-Link 没有激活。请在 Quantumult X 的 Task Gallery 中手动添加上面的
-“任务画廊地址”。
+```text
+quantumult-x:///ui?module=gallery&type=task&action=add&content=%5B%22https%3A%2F%2Fraw.githubusercontent.com%2Fismepy%2Fquanx-scripts%2Fmain%2Fgallery.json%22%5D
+```
 
 ### 安装
 
-1. 在 iPhone 上点击上面的添加链接；如果没有唤起 Quantumult X，则进入
+1. 复制上面的直接 Scheme，在 iPhone 浏览器地址栏粘贴并打开。
+   如果浏览器仍未唤起 Quantumult X，则进入
    `构造请求 → Task Gallery → 添加画廊`，粘贴任务画廊地址。
 2. 在画廊中安装“Holivator 每日签到”。任务会通过 `addons` 自动添加配套重写资源。
 3. 确认 Quantumult X 已安装并信任 MitM 证书，同时启用“重写”和 MitM。
