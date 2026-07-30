@@ -1,0 +1,1 @@
+{"name":"Holivator 自动签到","task":[{"config":"13 3 9 * * * https:\/\/raw.githubusercontent.com\/ismepy\/quanx-scripts\/main\/scripts\/holivator_checkin.js#force-timeout=30000, tag=Holivator 每日签到, enabled=true","addons":"https:\/\/raw.githubusercontent.com\/ismepy\/quanx-scripts\/main\/holivator.snippet"}],"description":"每天北京时间 09:03:13 自动签到；登录状态仅保存在 Quantumult X 本机。"}

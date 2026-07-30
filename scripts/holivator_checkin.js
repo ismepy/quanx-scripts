@@ -17,6 +17,23 @@ function finish(subtitle, message) {
   $done();
 }
 
+const variables =
+  typeof $environment !== "undefined" && $environment.variables
+    ? $environment.variables
+    : {};
+const configuredTimeout = Number.parseInt(
+  variables["force-timeout"] || "30000",
+  10
+);
+const forceTimeout =
+  Number.isFinite(configuredTimeout) && configuredTimeout > 0
+    ? configuredTimeout
+    : 30000;
+
+setTimeout(() => {
+  finish("执行超时", "任务未在限定时间内完成");
+}, forceTimeout);
+
 function parseJson(text) {
   try {
     return JSON.parse(text || "{}");
@@ -84,14 +101,23 @@ if (!auth.authorization && !auth.cookie) {
   if (auth.cookie) headers.Cookie = auth.cookie;
   if (csrf) headers["X-CSRF-Token"] = csrf;
 
+  const requestOptions = {
+    redirection: true,
+    "skip-cert-verify": false,
+    "auto-cookie": false
+  };
+
   $task
     .fetch({
       url: STATUS_URL,
       method: "GET",
-      headers
+      headers,
+      opts: requestOptions
     })
     .then((statusResponse) => {
-      if (statusResponse.statusCode === 401) {
+      const statusCode = Number(statusResponse.statusCode);
+
+      if (statusCode === 401) {
         finish(
           "登录状态已过期",
           "请用 Safari 重新登录并打开签到页面"
@@ -99,7 +125,7 @@ if (!auth.authorization && !auth.cookie) {
         return null;
       }
 
-      if (statusResponse.statusCode === 429) {
+      if (statusCode === 429) {
         finish("请求过于频繁", "已停止执行，不会自动重试");
         return null;
       }
@@ -117,13 +143,16 @@ if (!auth.authorization && !auth.cookie) {
       return $task.fetch({
         url: CHECKIN_URL,
         method: "POST",
-        headers
+        headers,
+        opts: requestOptions
       });
     })
     .then((response) => {
       if (!response || finished) return;
 
-      if (response.statusCode === 401) {
+      const statusCode = Number(response.statusCode);
+
+      if (statusCode === 401) {
         finish(
           "登录状态已过期",
           "请用 Safari 重新登录并打开签到页面"
@@ -131,7 +160,7 @@ if (!auth.authorization && !auth.cookie) {
         return;
       }
 
-      if (response.statusCode === 429) {
+      if (statusCode === 429) {
         finish("请求过于频繁", "已停止执行，不会自动重试");
         return;
       }
@@ -163,6 +192,10 @@ if (!auth.authorization && !auth.cookie) {
       finish("签到失败", info.message);
     })
     .catch((error) => {
-      finish("网络请求失败", String(error));
+      const message =
+        error && typeof error === "object" && error.error
+          ? error.error
+          : String(error);
+      finish("网络请求失败", message);
     });
 }
