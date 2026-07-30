@@ -14,7 +14,7 @@ https://raw.githubusercontent.com/ismepy/quanx-scripts/main/holivator.snippet
 2. 确认 Quantumult X 已安装并信任 MitM 证书，同时启用“重写”和 MitM。
 3. 使用 Safari 登录 `https://holivator.de/`。
 4. 打开 `https://holivator.de/portal/checkin`，直到收到“登录状态已保存到本机”通知。
-5. 模块每天北京时间 08:03:13 执行一次。
+5. 模块每天北京时间 09:03:13 执行一次。
 
 Cookie、Bearer Token 和 CSRF Token 只保存在 Quantumult X 的本机
 `$prefs` 中，不会写入本仓库。
