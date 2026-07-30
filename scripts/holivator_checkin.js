@@ -4,16 +4,19 @@
  */
 
 const STORAGE_KEY = "holivator_auth_v1";
+const SCHEDULE_KEY = "holivator_schedule_v1";
 const API_BASE = "https://holivator.de/api/v1";
 const STATUS_URL = API_BASE + "/user/checkin/status";
 const CHECKIN_URL = API_BASE + "/user/checkin";
 
 let finished = false;
+let scheduledLabel = "";
 
 function finish(subtitle, message) {
   if (finished) return;
   finished = true;
-  $notify("Holivator 自动签到", subtitle, message || "");
+  const scheduleText = scheduledLabel ? "（计划 " + scheduledLabel + "）" : "";
+  $notify("Holivator 自动签到", subtitle, (message || "") + scheduleText);
   $done();
 }
 
@@ -59,19 +62,64 @@ function isBlocked(code) {
   ].includes(code);
 }
 
-let auth;
-try {
-  auth = JSON.parse($prefs.valueForKey(STORAGE_KEY) || "{}");
-} catch (_) {
-  auth = {};
+function beijingNow() {
+  const shifted = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return {
+    date: shifted.toISOString().slice(0, 10),
+    hour: shifted.getUTCHours(),
+    minute: shifted.getUTCMinutes()
+  };
 }
 
-if (!auth.authorization && !auth.cookie) {
-  finish(
-    "尚未获取登录状态",
-    "请启用模块后用 Safari 登录，并打开 Holivator 签到页面"
-  );
+function shouldRunNow() {
+  const now = beijingNow();
+  if (now.hour !== 8) return false;
+
+  let schedule;
+  try {
+    schedule = JSON.parse($prefs.valueForKey(SCHEDULE_KEY) || "{}");
+  } catch (_) {
+    schedule = {};
+  }
+
+  if (schedule.date !== now.date) {
+    schedule = {
+      date: now.date,
+      targetMinute: Math.floor(Math.random() * 12) * 5,
+      attempted: false
+    };
+    $prefs.setValueForKey(JSON.stringify(schedule), SCHEDULE_KEY);
+  }
+
+  scheduledLabel =
+    "08:" + String(schedule.targetMinute).padStart(2, "0");
+
+  if (schedule.attempted || now.minute < schedule.targetMinute) {
+    return false;
+  }
+
+  schedule.attempted = true;
+  schedule.attemptedAt = new Date().toISOString();
+  $prefs.setValueForKey(JSON.stringify(schedule), SCHEDULE_KEY);
+  return true;
+}
+
+if (!shouldRunNow()) {
+  $done();
 } else {
+  let auth;
+  try {
+    auth = JSON.parse($prefs.valueForKey(STORAGE_KEY) || "{}");
+  } catch (_) {
+    auth = {};
+  }
+
+  if (!auth.authorization && !auth.cookie) {
+    finish(
+      "尚未获取登录状态",
+      "请启用模块后用 Safari 登录，并打开 Holivator 签到页面"
+    );
+  } else {
   const csrf = auth.csrf || getCookie(auth.cookie, "csrf_token");
   const headers = {
     Accept: "application/json",
@@ -165,4 +213,5 @@ if (!auth.authorization && !auth.cookie) {
     .catch((error) => {
       finish("网络请求失败", String(error));
     });
+  }
 }
