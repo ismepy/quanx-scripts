@@ -16,6 +16,7 @@ const LOGIN_URL = API_BASE + "/auth/login";
 
 let finished = false;
 let recoveryAttempted = false;
+let recoverySummary = "";
 
 function log(message) {
   if (typeof console !== "undefined" && console.log) {
@@ -312,14 +313,20 @@ if (
         log("媒体账号接口 HTTP " + statusCode);
         finish(
           subtitle,
-          [checkinMessage, mediaMessage].filter(Boolean).join("\n")
+          [recoverySummary, checkinMessage, mediaMessage]
+            .filter(Boolean)
+            .join("\n")
         );
       })
       .catch(() => {
         log("媒体账号过期时间查询失败");
         finish(
           subtitle,
-          [checkinMessage, "⚠️ 媒体账号过期：暂时无法查询"]
+          [
+            recoverySummary,
+            checkinMessage,
+            "⚠️ 媒体账号过期：暂时无法查询"
+          ]
             .filter(Boolean)
             .join("\n")
         );
@@ -374,6 +381,7 @@ if (
             auth.refreshToken;
 
           const saved = saveAuth();
+          recoverySummary = "🔄 登录状态：已自动续期";
           log("自动续期成功，本机保存结果：" + Boolean(saved));
           return "success";
         }
@@ -460,6 +468,7 @@ if (
           auth.csrf = "";
 
           const saved = saveAuth();
+          recoverySummary = "🔐 登录状态：已自动重新登录";
           log(
             "自动重新登录成功，本机保存结果：" +
               Boolean(saved) +
