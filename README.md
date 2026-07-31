@@ -20,7 +20,8 @@ quantumult-x:///ui?module=gallery&type=task&action=add&content=%5B%22https%3A%2F
    如果浏览器仍未唤起 Quantumult X，则进入
    `构造请求 → Task Gallery → 添加画廊`，粘贴任务画廊地址。
 2. 如果安装过旧版本，先删除旧的 Holivator 定时任务和重写资源，再从画廊重新安装。
-   任务会通过 `addons` 自动添加配套重写资源。
+   先点“添加”安装两个 Task，再在同一画廊项目中点“添加附加组件”安装重写资源。
+   QuanX 会分别确认任务和附加组件，不会在只添加任务时静默安装重写资源。
 3. 确认 Quantumult X 已安装并信任 MitM 证书，同时启用“重写”和 MitM。
 4. 使用 Safari 或 Chrome 打开 `https://holivator.de/`，用账号密码登录。
 5. 登录成功后的 15 分钟内打开 `https://holivator.de/portal/checkin`，直到收到
