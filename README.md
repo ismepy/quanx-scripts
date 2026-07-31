@@ -19,7 +19,8 @@ quantumult-x:///ui?module=gallery&type=task&action=add&content=%5B%22https%3A%2F
 1. 复制上面的直接 Scheme，在 iPhone 浏览器地址栏粘贴并打开。
    如果浏览器仍未唤起 Quantumult X，则进入
    `构造请求 → Task Gallery → 添加画廊`，粘贴任务画廊地址。
-2. 在画廊中安装“Holivator 每日签到”。任务会通过 `addons` 自动添加配套重写资源。
+2. 如果安装过旧版本，先删除旧的 Holivator 定时任务和重写资源，再从画廊重新安装。
+   任务会通过 `addons` 自动添加配套重写资源。
 3. 确认 Quantumult X 已安装并信任 MitM 证书，同时启用“重写”和 MitM。
 4. 使用 Safari 或 Chrome 打开 `https://holivator.de/`，用账号密码登录。
    完全自动模式不能使用 Telegram 登录完成首次凭据保存。
@@ -47,3 +48,5 @@ Quantumult X 的本机 `$prefs` 中，不会写入本仓库或通知、日志。
 
 重写资源采用 Quantumult X 官方远程重写格式，仅包含 `hostname` 与重写规则；
 定时任务通过 Task Gallery 的 `config` 和 `addons` 字段安装。
+实际执行脚本固定到不可变的 Git 提交版本，避免 `main` 分支后续变化直接读取本机凭据；
+以后升级功能时需要从画廊重新安装新版本。
