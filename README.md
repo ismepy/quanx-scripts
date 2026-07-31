@@ -29,6 +29,7 @@ quantumult-x:///ui?module=gallery&type=task&action=add&content=%5B%22https%3A%2F
 6. 模块每天北京时间 09:03:13 执行一次。
 7. 网站接口返回相应数据时，任务通知会显示今日积分、连续签到天数、累计积分，
    以及“账号 → 媒体账号”中的过期时间。过期时间按北京时间显示。
+   成功、已签到、限流、风控、失败和媒体账号状态会使用对应的表情符号区分。
 
 账号密码、Cookie、Bearer Token、刷新令牌和 CSRF Token 只保存在
 Quantumult X 的本机 `$prefs` 中，不会写入本仓库或通知、日志。

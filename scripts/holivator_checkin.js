@@ -23,11 +23,30 @@ function log(message) {
   }
 }
 
+function statusIcon(subtitle) {
+  const text = String(subtitle || "");
+  if (/签到成功/.test(text)) return "✅";
+  if (/已经签到/.test(text)) return "📅";
+  if (/网站阻止/.test(text)) return "🛑";
+  if (/请求过于频繁/.test(text)) return "⚠️";
+  if (/登录状态已过期|尚未获取登录状态|需要两步验证/.test(text)) {
+    return "🔐";
+  }
+  if (/执行超时/.test(text)) return "⏱️";
+  if (/失败/.test(text)) return "❌";
+  if (/暂时/.test(text)) return "⚠️";
+  return "ℹ️";
+}
+
 function finish(subtitle, message) {
   if (finished) return;
   finished = true;
   log("任务结束：" + subtitle + (message ? "；" + message : ""));
-  $notify("Holivator 自动签到", subtitle, message || "");
+  $notify(
+    "Holivator 自动签到",
+    statusIcon(subtitle) + " " + subtitle,
+    message || ""
+  );
   $done();
 }
 
@@ -116,9 +135,9 @@ function checkinDetails(data, fallbackPoints) {
   ]);
   const lines = [];
 
-  if (todayPoints !== "") lines.push("今日积分：" + todayPoints);
-  if (streak !== "") lines.push("连续签到：" + streak + " 天");
-  if (totalPoints !== "") lines.push("累计积分：" + totalPoints);
+  if (todayPoints !== "") lines.push("🎁 今日积分：" + todayPoints);
+  if (streak !== "") lines.push("🔥 连续签到：" + streak + " 天");
+  if (totalPoints !== "") lines.push("🏆 累计积分：" + totalPoints);
 
   return lines.join("\n");
 }
@@ -163,7 +182,7 @@ function mediaAccountDetails(data) {
       ? details
       : [];
 
-  if (items.length === 0) return "媒体账号：未找到";
+  if (items.length === 0) return "ℹ️ 媒体账号：未找到";
 
   return items
     .map((item, index) => {
@@ -173,12 +192,16 @@ function mediaAccountDetails(data) {
         item && item.account_type
       ]);
       const service = serviceName ? "（" + serviceName + "）" : "";
+      const expiry = formatMediaExpiry(item && item.expires_at);
+      const icon = expiry === "永久" ? "♾️" : "⏳";
       return (
+        icon +
+        " " +
         "媒体账号" +
         number +
         service +
         "过期：" +
-        formatMediaExpiry(item && item.expires_at)
+        expiry
       );
     })
     .join("\n");
@@ -278,12 +301,12 @@ if (
       .then((response) => {
         const statusCode = Number(response.statusCode);
         const data = parseJson(response.body);
-        let mediaMessage = "媒体账号过期：暂时无法查询";
+        let mediaMessage = "⚠️ 媒体账号过期：暂时无法查询";
 
         if (statusCode === 200 && data.code === 0 && data.data) {
           mediaMessage = mediaAccountDetails(data.data);
         } else if (statusCode === 403) {
-          mediaMessage = "媒体账号过期：无权查看";
+          mediaMessage = "🔐 媒体账号过期：无权查看";
         }
 
         log("媒体账号接口 HTTP " + statusCode);
@@ -296,7 +319,7 @@ if (
         log("媒体账号过期时间查询失败");
         finish(
           subtitle,
-          [checkinMessage, "媒体账号过期：暂时无法查询"]
+          [checkinMessage, "⚠️ 媒体账号过期：暂时无法查询"]
             .filter(Boolean)
             .join("\n")
         );
