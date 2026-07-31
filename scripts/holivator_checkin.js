@@ -28,7 +28,7 @@ function log(message) {
 function statusIcon(subtitle) {
   const text = String(subtitle || "");
   if (/签到成功/.test(text)) return "✅";
-  if (/已经签到/.test(text)) return "📅";
+  if (/今日已签到|已经签到/.test(text)) return "📅";
   if (/网站阻止/.test(text)) return "🛑";
   if (/请求过于频繁/.test(text)) return "⚠️";
   if (/登录状态已过期|尚未获取登录状态|需要两步验证/.test(text)) {
@@ -595,7 +595,7 @@ if (
         statusData.data.checked_in_today
       ) {
         return finishWithDetails(
-          "今日已经签到",
+          "今日已签到",
           statusData.data,
           ""
         );
@@ -673,7 +673,7 @@ if (
       if (
         /already|checked.?in|已签到/i.test(info.code + " " + info.message)
       ) {
-        finish("今日已经签到", info.message);
+        finish("今日已签到", info.message);
         return;
       }
 
