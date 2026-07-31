@@ -9,6 +9,8 @@ const CREDENTIALS_KEY = "holivator_credentials_v1";
 const API_BASE = "https://holivator.de/api/v1";
 const STATUS_URL = API_BASE + "/user/checkin/status";
 const CHECKIN_URL = API_BASE + "/user/checkin";
+const MEDIA_ACCOUNTS_URL =
+  API_BASE + "/user/media-accounts?skip=0&limit=10";
 const REFRESH_URL = API_BASE + "/auth/refresh";
 const LOGIN_URL = API_BASE + "/auth/login";
 
@@ -87,6 +89,101 @@ function errorInfo(data) {
   };
 }
 
+function firstDisplayValue(values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== "") {
+      return value;
+    }
+  }
+  return "";
+}
+
+function checkinDetails(data, fallbackPoints) {
+  const details = data && typeof data === "object" ? data : {};
+  const todayPoints = firstDisplayValue([
+    details.today_points,
+    details.todayPoints,
+    fallbackPoints
+  ]);
+  const streak = firstDisplayValue([
+    details.streak,
+    details.streak_days,
+    details.streakDays
+  ]);
+  const totalPoints = firstDisplayValue([
+    details.total_points_earned,
+    details.totalPointsEarned
+  ]);
+  const lines = [];
+
+  if (todayPoints !== "") lines.push("今日积分：" + todayPoints);
+  if (streak !== "") lines.push("连续签到：" + streak + " 天");
+  if (totalPoints !== "") lines.push("累计积分：" + totalPoints);
+
+  return lines.join("\n");
+}
+
+function twoDigits(value) {
+  return String(value).padStart(2, "0");
+}
+
+function formatMediaExpiry(value) {
+  const text = String(value || "").trim();
+  if (!text) return "永久";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+
+  const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(text)
+    ? text
+    : text + "+08:00";
+  const timestamp = Date.parse(normalized);
+  if (!Number.isFinite(timestamp)) return text;
+
+  const beijingTime = new Date(timestamp + 8 * 60 * 60 * 1000);
+  const year = beijingTime.getUTCFullYear();
+  if (year > 2100) return "永久";
+
+  return (
+    year +
+    "-" +
+    twoDigits(beijingTime.getUTCMonth() + 1) +
+    "-" +
+    twoDigits(beijingTime.getUTCDate()) +
+    " " +
+    twoDigits(beijingTime.getUTCHours()) +
+    ":" +
+    twoDigits(beijingTime.getUTCMinutes())
+  );
+}
+
+function mediaAccountDetails(data) {
+  const details = data && typeof data === "object" ? data : {};
+  const items = Array.isArray(details.items)
+    ? details.items
+    : Array.isArray(details)
+      ? details
+      : [];
+
+  if (items.length === 0) return "媒体账号：未找到";
+
+  return items
+    .map((item, index) => {
+      const number = items.length > 1 ? index + 1 : "";
+      const serviceName = firstDisplayValue([
+        item && item.service_name,
+        item && item.account_type
+      ]);
+      const service = serviceName ? "（" + serviceName + "）" : "";
+      return (
+        "媒体账号" +
+        number +
+        service +
+        "过期：" +
+        formatMediaExpiry(item && item.expires_at)
+      );
+    })
+    .join("\n");
+}
+
 function isBlocked(code) {
   return [
     "CHECKIN_RISK_BLOCKED",
@@ -157,6 +254,53 @@ if (
     if (auth.cookie) headers.Cookie = auth.cookie;
     if (csrf) headers["X-CSRF-Token"] = csrf;
     return headers;
+  }
+
+  function finishWithDetails(
+    subtitle,
+    statusData,
+    fallbackPoints,
+    fallbackMessage
+  ) {
+    const checkinMessage =
+      checkinDetails(statusData, fallbackPoints) || fallbackMessage;
+    const mediaHeaders = buildHeaders();
+    mediaHeaders.Referer = "https://holivator.de/portal/media-accounts";
+
+    log("正在查询媒体账号过期时间");
+    return $task
+      .fetch({
+        url: MEDIA_ACCOUNTS_URL,
+        method: "GET",
+        headers: mediaHeaders,
+        opts: requestOptions
+      })
+      .then((response) => {
+        const statusCode = Number(response.statusCode);
+        const data = parseJson(response.body);
+        let mediaMessage = "媒体账号过期：暂时无法查询";
+
+        if (statusCode === 200 && data.code === 0 && data.data) {
+          mediaMessage = mediaAccountDetails(data.data);
+        } else if (statusCode === 403) {
+          mediaMessage = "媒体账号过期：无权查看";
+        }
+
+        log("媒体账号接口 HTTP " + statusCode);
+        finish(
+          subtitle,
+          [checkinMessage, mediaMessage].filter(Boolean).join("\n")
+        );
+      })
+      .catch(() => {
+        log("媒体账号过期时间查询失败");
+        finish(
+          subtitle,
+          [checkinMessage, "媒体账号过期：暂时无法查询"]
+            .filter(Boolean)
+            .join("\n")
+        );
+      });
   }
 
   function saveAuth() {
@@ -383,8 +527,12 @@ if (
         statusData.data &&
         statusData.data.checked_in_today
       ) {
-        finish("今日已经签到", "无需重复签到");
-        return null;
+        return finishWithDetails(
+          "今日已经签到",
+          statusData.data,
+          "",
+          "无需重复签到"
+        );
       }
 
       log("今日尚未签到，正在提交签到请求");
@@ -411,12 +559,44 @@ if (
 
       const data = parseJson(response.body);
       if (data.code === 0) {
-        const points =
+        const pointsAwarded =
           data.data && data.data.points_awarded !== undefined
-            ? "，获得 " + data.data.points_awarded + " 积分"
+            ? data.data.points_awarded
             : "";
-        finish("签到成功", "今日签到完成" + points);
-        return;
+
+        log("签到成功，正在查询积分详情");
+        return $task
+          .fetch({
+            url: STATUS_URL,
+            method: "GET",
+            headers: buildHeaders(),
+            opts: requestOptions
+          })
+          .then((detailResponse) => {
+            const detailStatusCode = Number(detailResponse.statusCode);
+            const detailData = parseJson(detailResponse.body);
+            const detailsData =
+              detailStatusCode === 200 && detailData.code === 0
+                ? detailData.data
+                : {};
+
+            log("签到详情接口 HTTP " + detailStatusCode);
+            return finishWithDetails(
+              "签到成功",
+              detailsData,
+              pointsAwarded,
+              "今日签到完成"
+            );
+          })
+          .catch(() => {
+            log("签到成功，但积分详情查询失败");
+            return finishWithDetails(
+              "签到成功",
+              {},
+              pointsAwarded,
+              "今日签到完成"
+            );
+          });
       }
 
       const info = errorInfo(data);
