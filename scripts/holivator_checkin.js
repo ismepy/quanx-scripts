@@ -1,16 +1,19 @@
 /*
  * Holivator scheduled check-in for Quantumult X.
- * Authentication is read only from Quantumult X local preferences.
+ * Authentication and optional login credentials are read only from
+ * Quantumult X local preferences.
  */
 
 const STORAGE_KEY = "holivator_auth_v1";
+const CREDENTIALS_KEY = "holivator_credentials_v1";
 const API_BASE = "https://holivator.de/api/v1";
 const STATUS_URL = API_BASE + "/user/checkin/status";
 const CHECKIN_URL = API_BASE + "/user/checkin";
 const REFRESH_URL = API_BASE + "/auth/refresh";
+const LOGIN_URL = API_BASE + "/auth/login";
 
 let finished = false;
-let refreshAttempted = false;
+let recoveryAttempted = false;
 
 function log(message) {
   if (typeof console !== "undefined" && console.log) {
@@ -95,9 +98,16 @@ function isBlocked(code) {
 
 let auth;
 try {
-  auth = JSON.parse($prefs.valueForKey(STORAGE_KEY) || "{}");
+  auth = parseJson($prefs.valueForKey(STORAGE_KEY));
 } catch (_) {
   auth = {};
+}
+
+let credentials;
+try {
+  credentials = parseJson($prefs.valueForKey(CREDENTIALS_KEY));
+} catch (_) {
+  credentials = {};
 }
 
 log(
@@ -108,17 +118,28 @@ log(
     "，CSRF=" +
     Boolean(auth.csrf) +
     "，Refresh Token=" +
-    Boolean(auth.refreshToken)
+    Boolean(auth.refreshToken) +
+    "，自动登录凭据=" +
+    Boolean(credentials.username && credentials.password)
 );
 
-if (!auth.authorization && !auth.cookie) {
+if (
+  !auth.authorization &&
+  !auth.cookie &&
+  !(credentials.username && credentials.password)
+) {
   finish(
     "尚未获取登录状态",
-    "请启用模块后用 Safari 登录，并打开 Holivator 签到页面"
+    "请启用模块后用账号密码登录，并打开 Holivator 签到页面"
   );
 } else {
   const requestOptions = {
-    redirection: true,
+    redirection: false,
+    "skip-cert-verify": false,
+    "auto-cookie": false
+  };
+  const authRequestOptions = {
+    redirection: false,
     "skip-cert-verify": false,
     "auto-cookie": false
   };
@@ -138,13 +159,15 @@ if (!auth.authorization && !auth.cookie) {
     return headers;
   }
 
+  function saveAuth() {
+    auth.capturedAt = new Date().toISOString();
+    return $prefs.setValueForKey(JSON.stringify(auth), STORAGE_KEY);
+  }
+
   function refreshAccessToken() {
     if (!auth.refreshToken) {
-      finish(
-        "登录状态已过期",
-        "尚未保存刷新令牌；请更新重写资源后重新登录一次"
-      );
-      return Promise.resolve(false);
+      log("没有可用的 Refresh Token，准备自动重新登录");
+      return Promise.resolve("reauthenticate");
     }
 
     log("Access Token 已过期，正在自动续期");
@@ -159,7 +182,7 @@ if (!auth.authorization && !auth.cookie) {
           Referer: "https://holivator.de/"
         },
         body: JSON.stringify({ refresh_token: auth.refreshToken }),
-        opts: requestOptions
+        opts: authRequestOptions
       })
       .then((response) => {
         const statusCode = Number(response.statusCode);
@@ -173,7 +196,7 @@ if (!auth.authorization && !auth.cookie) {
 
         if (statusCode === 429) {
           finish("请求过于频繁", "自动续期已停止，不会继续重试");
-          return false;
+          return "stop";
         }
 
         if (statusCode >= 200 && statusCode < 300 && accessToken) {
@@ -182,22 +205,132 @@ if (!auth.authorization && !auth.cookie) {
             tokenData.refresh_token ||
             tokenData.refreshToken ||
             auth.refreshToken;
-          auth.capturedAt = new Date().toISOString();
 
-          const saved = $prefs.setValueForKey(
-            JSON.stringify(auth),
-            STORAGE_KEY
-          );
+          const saved = saveAuth();
           log("自动续期成功，本机保存结果：" + Boolean(saved));
-          return true;
+          return "success";
+        }
+
+        if ([400, 401, 422].includes(statusCode)) {
+          log("Refresh Token 已失效，准备自动重新登录");
+          return "reauthenticate";
         }
 
         finish(
-          "登录状态已过期",
-          "刷新令牌也已失效，请重新登录 Holivator"
+          "自动续期暂时失败",
+          "网站服务异常；为保护账号，本次未发送登录密码"
+        );
+        return "stop";
+      })
+      .catch(() => {
+        finish(
+          "自动续期网络失败",
+          "为保护账号，未输出请求详情，也未继续发送登录密码"
+        );
+        return "stop";
+      });
+  }
+
+  function loginWithCredentials() {
+    if (!credentials.username || !credentials.password) {
+      finish(
+        "登录状态已过期",
+        "未保存自动登录凭据，请用账号密码重新登录一次"
+      );
+      return Promise.resolve(false);
+    }
+
+    log("正在自动重新登录：Username=true，Password=true");
+    return $task
+      .fetch({
+        url: LOGIN_URL,
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Origin: "https://holivator.de",
+          Referer: "https://holivator.de/login"
+        },
+        body: JSON.stringify({
+          username: credentials.username,
+          password: credentials.password
+        }),
+        opts: authRequestOptions
+      })
+      .then((response) => {
+        const statusCode = Number(response.statusCode);
+        const data = parseJson(response.body);
+        const tokenData =
+          data && typeof data.data === "object" ? data.data : data;
+        const accessToken =
+          tokenData.access_token || tokenData.accessToken || "";
+        const refreshToken =
+          tokenData.refresh_token || tokenData.refreshToken || "";
+
+        log("自动登录接口 HTTP " + statusCode);
+
+        if (statusCode === 429) {
+          finish("请求过于频繁", "自动重新登录已停止，不会继续重试");
+          return false;
+        }
+
+        if (statusCode >= 500) {
+          finish(
+            "自动重新登录暂时失败",
+            "网站服务异常，请稍后再试"
+          );
+          return false;
+        }
+
+        if (
+          statusCode >= 200 &&
+          statusCode < 300 &&
+          accessToken
+        ) {
+          auth.authorization = normalizeAuthorization(accessToken);
+          auth.refreshToken = refreshToken;
+          auth.cookie = "";
+          auth.csrf = "";
+
+          const saved = saveAuth();
+          log(
+            "自动重新登录成功，本机保存结果：" +
+              Boolean(saved) +
+              "，Refresh Token=" +
+              Boolean(refreshToken)
+          );
+          return true;
+        }
+
+        if (tokenData.requires_2fa || data.requires_2fa) {
+          finish(
+            "自动重新登录需要两步验证",
+            "请在网页完成验证后重新打开签到页面"
+          );
+          return false;
+        }
+
+        finish(
+          "自动重新登录失败",
+          "账号密码可能已变化，请在网页重新登录一次"
+        );
+        return false;
+      })
+      .catch(() => {
+        finish(
+          "自动重新登录网络失败",
+          "为保护账号，未输出包含请求内容的错误详情"
         );
         return false;
       });
+  }
+
+  function recoverAuthentication() {
+    return refreshAccessToken().then((result) => {
+      if (result === "success") return true;
+      if (result === "reauthenticate") return loginWithCredentials();
+      return false;
+    });
   }
 
   function authenticatedRequest(url, method) {
@@ -210,14 +343,14 @@ if (!auth.authorization && !auth.cookie) {
       });
 
     return send().then((response) => {
-      if (Number(response.statusCode) !== 401 || refreshAttempted) {
+      if (Number(response.statusCode) !== 401 || recoveryAttempted) {
         return response;
       }
 
-      refreshAttempted = true;
-      return refreshAccessToken().then((refreshed) => {
-        if (!refreshed || finished) return null;
-        log("续期完成，重新发送原请求");
+      recoveryAttempted = true;
+      return recoverAuthentication().then((recovered) => {
+        if (!recovered || finished) return null;
+        log("登录状态恢复完成，重新发送原请求");
         return send();
       });
     });

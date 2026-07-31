@@ -1,5 +1,6 @@
 ; Holivator authentication capture for Quantumult X.
 ; Cookie and tokens are stored only in local $prefs.
 hostname = holivator.de
+^https:\/\/holivator\.de\/api\/v1\/auth\/login(?:\?.*)?$ url script-request-body https://raw.githubusercontent.com/ismepy/quanx-scripts/main/scripts/holivator_credentials_capture.js
 ^https:\/\/holivator\.de\/api\/v1\/user\/checkin(?:\/status)?(?:\?.*)?$ url script-request-header https://raw.githubusercontent.com/ismepy/quanx-scripts/main/scripts/holivator_capture.js
-^https:\/\/holivator\.de\/api\/v1\/auth\/(?:login|telegram-login|verify-2fa|refresh)(?:\?.*)?$ url script-response-body https://raw.githubusercontent.com/ismepy/quanx-scripts/main/scripts/holivator_auth_response.js
+^https:\/\/holivator\.de\/api\/v1\/auth\/(?:telegram-login|verify-2fa|refresh)(?:\?.*)?$ url script-response-body https://raw.githubusercontent.com/ismepy/quanx-scripts/main/scripts/holivator_auth_response.js
