@@ -9,6 +9,7 @@ const CREDENTIALS_KEY = "holivator_credentials_v1";
 const API_BASE = "https://holivator.de/api/v1";
 const STATUS_URL = API_BASE + "/user/checkin/status";
 const CHECKIN_URL = API_BASE + "/user/checkin";
+const USER_INFO_URL = API_BASE + "/user/me";
 const MEDIA_ACCOUNTS_URL =
   API_BASE + "/user/media-accounts?skip=0&limit=10";
 const REFRESH_URL = API_BASE + "/auth/refresh";
@@ -130,17 +131,31 @@ function checkinDetails(data, fallbackPoints) {
     details.streak_days,
     details.streakDays
   ]);
-  const totalPoints = firstDisplayValue([
-    details.total_points_earned,
-    details.totalPointsEarned
+
+  return {
+    today:
+      todayPoints !== ""
+        ? "🎁 今日积分：" + todayPoints
+        : "⚠️ 今日积分：暂时无法查询",
+    streak:
+      streak !== ""
+        ? "🔥 连续签到：" + streak + " 天"
+        : "⚠️ 连续签到：暂时无法查询"
+  };
+}
+
+function userPointsDetails(data) {
+  const details = data && typeof data === "object" ? data : {};
+  const points = firstDisplayValue([
+    details.point,
+    details.points,
+    details.current_points,
+    details.currentPoints
   ]);
-  const lines = [];
 
-  if (todayPoints !== "") lines.push("🎁 今日积分：" + todayPoints);
-  if (streak !== "") lines.push("🔥 连续签到：" + streak + " 天");
-  if (totalPoints !== "") lines.push("🏆 累计积分：" + totalPoints);
-
-  return lines.join("\n");
+  return points !== ""
+    ? "💰 用户当前积分：" + points
+    : "⚠️ 用户当前积分：暂时无法查询";
 }
 
 function twoDigits(value) {
@@ -280,19 +295,15 @@ if (
     return headers;
   }
 
-  function finishWithDetails(
-    subtitle,
-    statusData,
-    fallbackPoints,
-    fallbackMessage
-  ) {
-    const checkinMessage =
-      checkinDetails(statusData, fallbackPoints) || fallbackMessage;
+  function finishWithDetails(subtitle, statusData, fallbackPoints) {
+    const checkinMessages = checkinDetails(statusData, fallbackPoints);
     const mediaHeaders = buildHeaders();
     mediaHeaders.Referer = "https://holivator.de/portal/media-accounts";
+    const userHeaders = buildHeaders();
+    userHeaders.Referer = "https://holivator.de/portal/profile";
 
     log("正在查询媒体账号过期时间");
-    return $task
+    const mediaRequest = $task
       .fetch({
         url: MEDIA_ACCOUNTS_URL,
         method: "GET",
@@ -311,26 +322,56 @@ if (
         }
 
         log("媒体账号接口 HTTP " + statusCode);
-        finish(
-          subtitle,
-          [recoverySummary, checkinMessage, mediaMessage]
-            .filter(Boolean)
-            .join("\n")
-        );
+        return mediaMessage;
       })
       .catch(() => {
         log("媒体账号过期时间查询失败");
+        return "⚠️ 媒体账号过期：暂时无法查询";
+      });
+
+    log("正在查询用户当前积分");
+    const userRequest = $task
+      .fetch({
+        url: USER_INFO_URL,
+        method: "GET",
+        headers: userHeaders,
+        opts: requestOptions
+      })
+      .then((response) => {
+        const statusCode = Number(response.statusCode);
+        const data = parseJson(response.body);
+        let userPointsMessage = "⚠️ 用户当前积分：暂时无法查询";
+
+        if (statusCode === 200 && data.code === 0 && data.data) {
+          userPointsMessage = userPointsDetails(data.data);
+        } else if (statusCode === 403) {
+          userPointsMessage = "🔐 用户当前积分：无权查看";
+        }
+
+        log("用户信息接口 HTTP " + statusCode);
+        return userPointsMessage;
+      })
+      .catch(() => {
+        log("用户当前积分查询失败");
+        return "⚠️ 用户当前积分：暂时无法查询";
+      });
+
+    return Promise.all([mediaRequest, userRequest]).then(
+      ([mediaMessage, userPointsMessage]) => {
         finish(
           subtitle,
           [
-            recoverySummary,
-            checkinMessage,
-            "⚠️ 媒体账号过期：暂时无法查询"
+            checkinMessages.today,
+            mediaMessage,
+            userPointsMessage,
+            checkinMessages.streak,
+            recoverySummary
           ]
             .filter(Boolean)
             .join("\n")
         );
-      });
+      }
+    );
   }
 
   function saveAuth() {
@@ -562,8 +603,7 @@ if (
         return finishWithDetails(
           "今日已经签到",
           statusData.data,
-          "",
-          "无需重复签到"
+          ""
         );
       }
 
@@ -616,8 +656,7 @@ if (
             return finishWithDetails(
               "签到成功",
               detailsData,
-              pointsAwarded,
-              "今日签到完成"
+              pointsAwarded
             );
           })
           .catch(() => {
@@ -625,8 +664,7 @@ if (
             return finishWithDetails(
               "签到成功",
               {},
-              pointsAwarded,
-              "今日签到完成"
+              pointsAwarded
             );
           });
       }
