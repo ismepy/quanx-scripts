@@ -203,11 +203,6 @@ function mediaAccountDetails(data) {
   return items
     .map((item, index) => {
       const number = items.length > 1 ? index + 1 : "";
-      const serviceName = firstDisplayValue([
-        item && item.service_name,
-        item && item.account_type
-      ]);
-      const service = serviceName ? "（" + serviceName + "）" : "";
       const expiry = formatMediaExpiry(item && item.expires_at);
       const icon = expiry === "永久" ? "♾️" : "⏳";
       return (
@@ -215,7 +210,6 @@ function mediaAccountDetails(data) {
         " " +
         "媒体账号" +
         number +
-        service +
         "过期：" +
         expiry
       );
