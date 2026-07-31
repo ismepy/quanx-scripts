@@ -62,6 +62,7 @@ try {
     authorization,
     cookie,
     csrf,
+    refreshToken: oldData.refreshToken || "",
     capturedAt: new Date().toISOString()
   };
 
