@@ -4,8 +4,6 @@
  */
 
 const STORAGE_KEY = "holivator_auth_v1";
-const CREDENTIALS_KEY = "holivator_credentials_v1";
-const PENDING_CREDENTIALS_KEY = "holivator_credentials_pending_v1";
 
 function log(message) {
   if (typeof console !== "undefined" && console.log) {
@@ -30,8 +28,6 @@ function normalizeAuthorization(token) {
 log("登录响应重写规则已命中");
 
 try {
-  const requestUrl =
-    typeof $request !== "undefined" ? String($request.url || "") : "";
   const responseData = parseJson($response.body);
   const data =
     responseData && typeof responseData.data === "object"
@@ -71,19 +67,7 @@ try {
         Boolean(nextData.refreshToken)
     );
 
-    if (
-      saved &&
-      /\/api\/v1\/auth\/telegram-login(?:\?.*)?$/.test(requestUrl)
-    ) {
-      $prefs.removeValueForKey(CREDENTIALS_KEY);
-      $prefs.removeValueForKey(PENDING_CREDENTIALS_KEY);
-      log("Telegram 登录已清除账号密码自动登录凭据");
-      $notify(
-        "Holivator 自动签到",
-        "Telegram 登录令牌已保存",
-        "为避免账号混用，账号密码自动登录已关闭"
-      );
-    } else if (saved && nextData.refreshToken) {
+    if (saved && nextData.refreshToken) {
       $notify(
         "Holivator 自动签到",
         "登录令牌已保存",

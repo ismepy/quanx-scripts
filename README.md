@@ -23,7 +23,6 @@ quantumult-x:///ui?module=gallery&type=task&action=add&content=%5B%22https%3A%2F
    任务会通过 `addons` 自动添加配套重写资源。
 3. 确认 Quantumult X 已安装并信任 MitM 证书，同时启用“重写”和 MitM。
 4. 使用 Safari 或 Chrome 打开 `https://holivator.de/`，用账号密码登录。
-   完全自动模式不能使用 Telegram 登录完成首次凭据保存。
 5. 登录成功后的 15 分钟内打开 `https://holivator.de/portal/checkin`，直到收到
    “完全自动登录已启用”通知。
 6. 模块每天北京时间 09:03:13 执行一次。
