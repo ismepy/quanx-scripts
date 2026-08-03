@@ -1,6 +1,6 @@
 ; Holivator authentication capture for Quantumult X.
 ; Cookie and tokens are stored only in local $prefs.
 hostname = holivator.de
-^https:\/\/holivator\.de\/api\/v1\/auth\/login(?:\?.*)?$ url script-request-body https://raw.githubusercontent.com/ismepy/quanx-scripts/9d9c1eece5d6eda362c2f0e88bd1f7941d52aaff/scripts/holivator_credentials_capture.js
-^https:\/\/holivator\.de\/api\/v1\/user\/checkin(?:\/status)?(?:\?.*)?$ url script-request-header https://raw.githubusercontent.com/ismepy/quanx-scripts/9d9c1eece5d6eda362c2f0e88bd1f7941d52aaff/scripts/holivator_capture.js
-^https:\/\/holivator\.de\/api\/v1\/auth\/(?:verify-2fa|refresh)(?:\?.*)?$ url script-response-body https://raw.githubusercontent.com/ismepy/quanx-scripts/9d9c1eece5d6eda362c2f0e88bd1f7941d52aaff/scripts/holivator_auth_response.js
+^https:\/\/holivator\.de\/api\/v1\/auth\/login(?:\?.*)?$ url script-request-body https://raw.githubusercontent.com/ismepy/quanx-scripts/1d66bf7aa5a622836eeeaa51f17f2429552edbf8/scripts/holivator_credentials_capture.js
+^https:\/\/holivator\.de\/api\/v1\/user\/checkin(?:\/status)?(?:\?.*)?$ url script-request-header https://raw.githubusercontent.com/ismepy/quanx-scripts/1d66bf7aa5a622836eeeaa51f17f2429552edbf8/scripts/holivator_capture.js
+^https:\/\/holivator\.de\/api\/v1\/auth\/(?:verify-2fa|refresh)(?:\?.*)?$ url script-response-body https://raw.githubusercontent.com/ismepy/quanx-scripts/1d66bf7aa5a622836eeeaa51f17f2429552edbf8/scripts/holivator_auth_response.js
