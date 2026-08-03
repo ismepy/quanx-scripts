@@ -59,17 +59,68 @@ const variables =
     ? $environment.variables
     : {};
 const configuredTimeout = Number.parseInt(
-  variables["force-timeout"] || "30000",
+  variables["force-timeout"] || "120000",
   10
 );
 const forceTimeout =
   Number.isFinite(configuredTimeout) && configuredTimeout > 0
     ? configuredTimeout
-    : 30000;
+    : 120000;
+const NETWORK_RETRY_ATTEMPTS = 2;
+const NETWORK_RETRY_DELAY_MS = 1500;
 
 setTimeout(() => {
   finish("执行超时", "任务未在限定时间内完成");
 }, forceTimeout);
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function fetchWithRetry(request, label) {
+  let attempt = 1;
+
+  const send = () =>
+    $task
+      .fetch(request)
+      .then((response) => {
+        const statusCode = Number(response.statusCode);
+        if (
+          statusCode >= 500 &&
+          attempt < NETWORK_RETRY_ATTEMPTS
+        ) {
+          attempt += 1;
+          log(
+            label +
+              "服务暂时不可用，" +
+              NETWORK_RETRY_DELAY_MS / 1000 +
+              " 秒后进行第 " +
+              attempt +
+              " 次尝试"
+          );
+          return wait(NETWORK_RETRY_DELAY_MS).then(send);
+        }
+        return response;
+      })
+      .catch(() => {
+        if (attempt >= NETWORK_RETRY_ATTEMPTS) {
+          return Promise.reject(new Error(label + "网络请求连续失败"));
+        }
+
+        attempt += 1;
+        log(
+          label +
+            "网络异常，" +
+            NETWORK_RETRY_DELAY_MS / 1000 +
+            " 秒后进行第 " +
+            attempt +
+            " 次尝试"
+        );
+        return wait(NETWORK_RETRY_DELAY_MS).then(send);
+      });
+
+  return send();
+}
 
 function parseJson(text) {
   try {
@@ -380,8 +431,8 @@ if (
     }
 
     log("Access Token 已过期，正在自动续期");
-    return $task
-      .fetch({
+    return fetchWithRetry(
+      {
         url: REFRESH_URL,
         method: "POST",
         headers: {
@@ -392,7 +443,9 @@ if (
         },
         body: JSON.stringify({ refresh_token: auth.refreshToken }),
         opts: authRequestOptions
-      })
+      },
+      "自动续期"
+    )
       .then((response) => {
         const statusCode = Number(response.statusCode);
         const data = parseJson(response.body);
@@ -421,21 +474,35 @@ if (
           return "success";
         }
 
+        if (statusCode === 403) {
+          finish(
+            "自动续期被网站阻止",
+            "已停止执行，不会继续发送登录密码"
+          );
+          return "stop";
+        }
+
         if ([400, 401, 422].includes(statusCode)) {
           log("Refresh Token 已失效，准备自动重新登录");
           return "reauthenticate";
         }
 
-        finish(
-          "自动续期暂时失败",
-          "网站服务异常；为保护账号，本次未发送登录密码"
+        log(
+          "自动续期未获得有效令牌，准备使用本机凭据重新登录"
         );
-        return "stop";
+        return "reauthenticate";
       })
       .catch(() => {
+        if (credentials.username && credentials.password) {
+          log(
+            "自动续期连续网络失败，准备使用本机凭据重新登录"
+          );
+          return "reauthenticate";
+        }
+
         finish(
           "自动续期网络失败",
-          "为保护账号，未输出请求详情，也未继续发送登录密码"
+          "已重试但仍失败，且没有可用的自动登录凭据"
         );
         return "stop";
       });
@@ -451,8 +518,8 @@ if (
     }
 
     log("正在自动重新登录：Username=true，Password=true");
-    return $task
-      .fetch({
+    return fetchWithRetry(
+      {
         url: LOGIN_URL,
         method: "POST",
         headers: {
@@ -466,7 +533,9 @@ if (
           password: credentials.password
         }),
         opts: authRequestOptions
-      })
+      },
+      "自动重新登录"
+    )
       .then((response) => {
         const statusCode = Number(response.statusCode);
         const data = parseJson(response.body);
@@ -530,7 +599,7 @@ if (
       .catch(() => {
         finish(
           "自动重新登录网络失败",
-          "为保护账号，未输出包含请求内容的错误详情"
+          "已安全重试但仍失败；请检查网络后手动运行一次任务"
         );
         return false;
       });
@@ -546,12 +615,15 @@ if (
 
   function authenticatedRequest(url, method) {
     const send = () =>
-      $task.fetch({
-        url,
-        method,
-        headers: buildHeaders(),
-        opts: requestOptions
-      });
+      fetchWithRetry(
+        {
+          url,
+          method,
+          headers: buildHeaders(),
+          opts: requestOptions
+        },
+        "签到请求"
+      );
 
     return send().then((response) => {
       if (Number(response.statusCode) !== 401 || recoveryAttempted) {
@@ -588,6 +660,14 @@ if (
         return null;
       }
 
+      if (statusCode >= 500) {
+        finish(
+          "网站服务暂时不可用",
+          "签到状态查询已重试，但网站仍未恢复"
+        );
+        return null;
+      }
+
       const statusData = parseJson(statusResponse.body);
       if (
         statusData.code === 0 &&
@@ -620,6 +700,14 @@ if (
 
       if (statusCode === 429) {
         finish("请求过于频繁", "已停止执行，不会自动重试");
+        return;
+      }
+
+      if (statusCode >= 500) {
+        finish(
+          "网站服务暂时不可用",
+          "签到提交已重试，但网站仍未恢复"
+        );
         return;
       }
 
