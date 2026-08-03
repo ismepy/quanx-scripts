@@ -348,13 +348,15 @@ if (
     userHeaders.Referer = "https://holivator.de/portal/profile";
 
     log("正在查询媒体账号过期时间");
-    const mediaRequest = $task
-      .fetch({
+    const mediaRequest = fetchWithRetry(
+      {
         url: MEDIA_ACCOUNTS_URL,
         method: "GET",
         headers: mediaHeaders,
         opts: requestOptions
-      })
+      },
+      "媒体账号查询"
+    )
       .then((response) => {
         const statusCode = Number(response.statusCode);
         const data = parseJson(response.body);
@@ -375,13 +377,15 @@ if (
       });
 
     log("正在查询用户当前积分");
-    const userRequest = $task
-      .fetch({
+    const userRequest = fetchWithRetry(
+      {
         url: USER_INFO_URL,
         method: "GET",
         headers: userHeaders,
         opts: requestOptions
-      })
+      },
+      "用户积分查询"
+    )
       .then((response) => {
         const statusCode = Number(response.statusCode);
         const data = parseJson(response.body);
@@ -461,7 +465,12 @@ if (
           return "stop";
         }
 
-        if (statusCode >= 200 && statusCode < 300 && accessToken) {
+        if (
+          statusCode >= 200 &&
+          statusCode < 300 &&
+          data.code === 0 &&
+          accessToken
+        ) {
           auth.authorization = normalizeAuthorization(accessToken);
           auth.refreshToken =
             tokenData.refresh_token ||
@@ -482,15 +491,26 @@ if (
           return "stop";
         }
 
+        if (statusCode >= 500) {
+          finish(
+            "自动续期暂时失败",
+            "续期接口已重试但网站仍未恢复；未继续发送登录密码"
+          );
+          return "stop";
+        }
+
         if ([400, 401, 422].includes(statusCode)) {
           log("Refresh Token 已失效，准备自动重新登录");
           return "reauthenticate";
         }
 
-        log(
-          "自动续期未获得有效令牌，准备使用本机凭据重新登录"
+        finish(
+          "自动续期响应异常",
+          "网站返回 HTTP " +
+            statusCode +
+            "；为保护账号，未继续发送登录密码"
         );
-        return "reauthenticate";
+        return "stop";
       })
       .catch(() => {
         if (credentials.username && credentials.password) {
@@ -553,6 +573,14 @@ if (
           return false;
         }
 
+        if (statusCode === 403) {
+          finish(
+            "自动重新登录被拒绝",
+            "网站拒绝登录请求，请稍后手动登录检查账号状态"
+          );
+          return false;
+        }
+
         if (statusCode >= 500) {
           finish(
             "自动重新登录暂时失败",
@@ -564,6 +592,7 @@ if (
         if (
           statusCode >= 200 &&
           statusCode < 300 &&
+          data.code === 0 &&
           accessToken
         ) {
           auth.authorization = normalizeAuthorization(accessToken);
@@ -639,6 +668,24 @@ if (
     });
   }
 
+  function fetchConfirmedCheckinDetails() {
+    return authenticatedRequest(STATUS_URL, "GET").then((response) => {
+      const statusCode = Number(response && response.statusCode);
+      const data = parseJson(response && response.body);
+
+      if (
+        statusCode === 200 &&
+        data.code === 0 &&
+        data.data &&
+        data.data.checked_in_today
+      ) {
+        return data.data;
+      }
+
+      return null;
+    });
+  }
+
   log("正在查询今日签到状态");
   authenticatedRequest(STATUS_URL, "GET")
     .then((statusResponse) => {
@@ -660,6 +707,14 @@ if (
         return null;
       }
 
+      if (statusCode === 403) {
+        finish(
+          "签到状态查询被拒绝",
+          "网站拒绝查询签到状态；已停止执行，不会继续提交签到"
+        );
+        return null;
+      }
+
       if (statusCode >= 500) {
         finish(
           "网站服务暂时不可用",
@@ -668,10 +723,26 @@ if (
         return null;
       }
 
+      if (statusCode < 200 || statusCode >= 300) {
+        finish(
+          "签到状态查询失败",
+          "网站返回 HTTP " + statusCode + "；已停止执行"
+        );
+        return null;
+      }
+
       const statusData = parseJson(statusResponse.body);
       if (
-        statusData.code === 0 &&
-        statusData.data &&
+        statusData.code !== 0 ||
+        !statusData.data ||
+        typeof statusData.data !== "object"
+      ) {
+        const info = errorInfo(statusData);
+        finish("签到状态查询失败", info.message);
+        return null;
+      }
+
+      if (
         statusData.data.checked_in_today
       ) {
         return finishWithDetails(
@@ -681,14 +752,52 @@ if (
         );
       }
 
+      if (statusData.data.can_checkin === false) {
+        finish(
+          "当前不可签到",
+          statusData.message || "网站当前不允许签到；已停止执行"
+        );
+        return null;
+      }
+
       log("今日尚未签到，正在提交签到请求");
-      return authenticatedRequest(CHECKIN_URL, "POST");
+      return authenticatedRequest(CHECKIN_URL, "POST").catch(() => {
+        log("签到提交结果不确定，正在反查今日签到状态");
+        return fetchConfirmedCheckinDetails().then(
+          (confirmationData) => {
+            if (confirmationData) {
+              return {
+                statusCode: 200,
+                body: JSON.stringify({
+                  code: 0,
+                  data: {
+                    points_awarded: confirmationData.today_points
+                  }
+                }),
+                confirmedStatusData: confirmationData
+              };
+            }
+
+            return Promise.reject(
+              new Error("签到提交失败且无法确认最终状态")
+            );
+          }
+        );
+      });
     })
     .then((response) => {
       if (!response || finished) return;
 
       const statusCode = Number(response.statusCode);
       log("签到接口 HTTP " + statusCode);
+
+      if (response.confirmedStatusData) {
+        return finishWithDetails(
+          "签到成功",
+          response.confirmedStatusData,
+          response.confirmedStatusData.today_points
+        );
+      }
 
       if (statusCode === 401) {
         finish(
@@ -704,28 +813,51 @@ if (
       }
 
       if (statusCode >= 500) {
-        finish(
-          "网站服务暂时不可用",
-          "签到提交已重试，但网站仍未恢复"
-        );
-        return;
+        log("签到提交返回服务错误，正在反查最终签到状态");
+        return fetchConfirmedCheckinDetails()
+          .then((confirmationData) => {
+            if (confirmationData) {
+              return finishWithDetails(
+                "签到成功",
+                confirmationData,
+                confirmationData.today_points
+              );
+            }
+
+            finish(
+              "网站服务暂时不可用",
+              "签到提交已重试，但网站仍未恢复"
+            );
+          })
+          .catch(() =>
+            finish(
+              "网站服务暂时不可用",
+              "签到提交和最终状态确认均失败"
+            )
+          );
       }
 
       const data = parseJson(response.body);
-      if (data.code === 0) {
+      if (
+        statusCode >= 200 &&
+        statusCode < 300 &&
+        data.code === 0
+      ) {
         const pointsAwarded =
           data.data && data.data.points_awarded !== undefined
             ? data.data.points_awarded
             : "";
 
         log("签到成功，正在查询积分详情");
-        return $task
-          .fetch({
+        return fetchWithRetry(
+          {
             url: STATUS_URL,
             method: "GET",
             headers: buildHeaders(),
             opts: requestOptions
-          })
+          },
+          "签到详情查询"
+        )
           .then((detailResponse) => {
             const detailStatusCode = Number(detailResponse.statusCode);
             const detailData = parseJson(detailResponse.body);
@@ -761,17 +893,29 @@ if (
       if (
         /already|checked.?in|已签到/i.test(info.code + " " + info.message)
       ) {
-        finish("今日已签到", info.message);
-        return;
+        log("网站返回今日已签到，正在补充查询签到详情");
+        return fetchConfirmedCheckinDetails()
+          .then((confirmationData) => {
+            if (confirmationData) {
+              return finishWithDetails(
+                "今日已签到",
+                confirmationData,
+                ""
+              );
+            }
+
+            finish("今日已签到", info.message);
+          })
+          .catch(() => finish("今日已签到", info.message));
       }
 
       finish("签到失败", info.message);
     })
-    .catch((error) => {
-      const message =
-        error && typeof error === "object" && error.error
-          ? error.error
-          : String(error);
-      finish("网络请求失败", message);
+    .catch(() => {
+      log("网络请求最终失败，未输出请求或凭据详情");
+      finish(
+        "网络请求失败",
+        "已安全重试但仍失败；请检查网络后手动运行一次任务"
+      );
     });
 }

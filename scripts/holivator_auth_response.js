@@ -29,6 +29,22 @@ log("登录响应重写规则已命中");
 
 try {
   const responseData = parseJson($response.body);
+  const url =
+    typeof $request !== "undefined" ? String($request.url || "") : "";
+  const method =
+    typeof $request !== "undefined"
+      ? String($request.method || "").toUpperCase()
+      : "";
+  const statusCode = Number(
+    typeof $response !== "undefined" && $response.statusCode
+      ? $response.statusCode
+      : 200
+  );
+  const exactAuthEndpoint =
+    method === "POST" &&
+    /^https:\/\/holivator\.de\/api\/v1\/auth\/(?:verify-2fa|refresh)(?:\?.*)?$/.test(
+      url
+    );
   const data =
     responseData && typeof responseData.data === "object"
       ? responseData.data
@@ -45,7 +61,13 @@ try {
     requestData.refreshToken ||
     "";
 
-  if (accessToken) {
+  if (
+    exactAuthEndpoint &&
+    statusCode >= 200 &&
+    statusCode < 300 &&
+    responseData.code === 0 &&
+    accessToken
+  ) {
     const oldRaw = $prefs.valueForKey(STORAGE_KEY);
     const oldData = oldRaw ? parseJson(oldRaw) : {};
     const nextData = {
@@ -75,7 +97,7 @@ try {
       );
     }
   } else {
-    log("响应中没有可保存的 Access Token");
+    log("响应不是成功的续期或两步验证结果，未保存令牌");
   }
 } catch (error) {
   log("保存登录令牌失败");

@@ -7,7 +7,7 @@ const STORAGE_KEY = "holivator_auth_v1";
 const CREDENTIALS_KEY = "holivator_credentials_v1";
 const PENDING_CREDENTIALS_KEY = "holivator_credentials_pending_v1";
 const PENDING_MAX_AGE_MS = 15 * 60 * 1000;
-const STATUS_URL = "https://holivator.de/api/v1/user/checkin/status";
+const USER_INFO_URL = "https://holivator.de/api/v1/user/me";
 
 function log(message) {
   if (typeof console !== "undefined" && console.log) {
@@ -46,11 +46,17 @@ function parseJson(text) {
   }
 }
 
+function normalizeAuthorization(token) {
+  const value = String(token || "").trim();
+  if (!value) return "";
+  return /^Bearer\s+/i.test(value) ? value : "Bearer " + value;
+}
+
 function notifyAuthSaved() {
   $notify(
     "Holivator 自动签到",
     "登录状态已保存到本机",
-    "未上传账号、Cookie 或 Token"
+    "未向任何第三方发送账号、Cookie 或 Token"
   );
 }
 
@@ -105,12 +111,17 @@ try {
       Number.isFinite(pendingAt) &&
       Date.now() - pendingAt >= 0 &&
       Date.now() - pendingAt <= PENDING_MAX_AGE_MS;
+    const authorizationChanged =
+      !pending.previousAuthorization ||
+      normalizeAuthorization(authorization) !==
+        normalizeAuthorization(pending.previousAuthorization);
 
     if (
       authorization &&
       pendingIsFresh &&
       pending.username &&
-      pending.password
+      pending.password &&
+      authorizationChanged
     ) {
       const validationHeaders = { Accept: "application/json" };
       if (authorization) {
@@ -119,10 +130,10 @@ try {
       if (cookie) validationHeaders.Cookie = cookie;
       if (csrf) validationHeaders["X-CSRF-Token"] = csrf;
 
-      log("正在向 Holivator 验证登录成功状态");
+      log("正在向 Holivator 验证登录账号与新令牌");
       $task
         .fetch({
-          url: STATUS_URL,
+          url: USER_INFO_URL,
           method: "GET",
           headers: validationHeaders,
           opts: {
@@ -134,11 +145,20 @@ try {
         .then((response) => {
           const statusCode = Number(response.statusCode);
           const data = parseJson(response.body);
-          const authenticated = statusCode === 200 && data.code === 0;
+          const authenticatedUsername = String(
+            data && data.data && data.data.username
+              ? data.data.username
+              : ""
+          ).trim();
+          const authenticated =
+            statusCode === 200 &&
+            data.code === 0 &&
+            authenticatedUsername.toLowerCase() ===
+              String(pending.username).trim().toLowerCase();
           log(
             "登录确认接口 HTTP " +
               statusCode +
-              "，认证成功=" +
+              "，账号与新令牌匹配=" +
               authenticated
           );
 
@@ -158,6 +178,12 @@ try {
                 "完全自动登录已启用",
                 "账号密码仅保存在 QuanX 本机"
               );
+            } else {
+              $notify(
+                "Holivator 自动签到",
+                "保存自动登录凭据失败",
+                "登录状态有效，但账号密码未能写入 QuanX 本机存储"
+              );
             }
             log(
               "自动登录凭据确认结果：" +
@@ -176,6 +202,16 @@ try {
           () => $done({}),
           () => $done({})
         );
+    } else if (
+      authorization &&
+      pendingIsFresh &&
+      pending.username &&
+      pending.password &&
+      !authorizationChanged
+    ) {
+      log("登录令牌未发生变化，不会确认或覆盖自动登录凭据");
+      if (!oldRaw || changed) notifyAuthSaved();
+      $done({});
     } else if (pendingRaw && !pendingIsFresh) {
       $prefs.removeValueForKey(PENDING_CREDENTIALS_KEY);
       log("已删除超过 15 分钟且未确认的待确认凭据");
